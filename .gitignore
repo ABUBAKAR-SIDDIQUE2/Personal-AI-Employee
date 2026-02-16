@@ -1,0 +1,34 @@
+# Project-specific exclusions
+kiro-openai-gateway/
+Copy of Personal AI Employee Hackathon 0_ Building Autonomous FTEs in 2026.md
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Vault runtime files
+AI_Employee_Vault/Logs/*.log
+AI_Employee_Vault/Logs/processed_files.json

@@ -1,0 +1,15 @@
+# Personal AI Employee - Bronze Tier
+# Python Dependencies
+
+# Core dependencies: None required!
+# Both base_watcher.py and filesystem_watcher.py use only Python standard library.
+
+# Optional dependencies for future enhancements:
+# watchdog==4.0.0  # For event-driven file monitoring (alternative to polling)
+# requests==2.31.0  # For API watchers
+# python-dotenv==1.0.0  # For environment variable management
+
+# Development dependencies (optional):
+# pytest==8.0.0  # For testing
+# black==24.0.0  # For code formatting
+# mypy==1.8.0  # For type checking
