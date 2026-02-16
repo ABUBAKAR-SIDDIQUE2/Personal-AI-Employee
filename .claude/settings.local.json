@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git checkout:*)",
+      "Bash(git merge silver-tier)",
+      "Bash(git push origin main)"
+    ]
+  }
+}

@@ -1,0 +1,281 @@
+# Planning Skill - AI Employee Brain
+
+## Overview
+
+This skill defines how the AI Employee (Digital FTE) should approach complex tasks using the **ReAct (Reasoning + Acting)** pattern. Instead of reacting blindly to tasks, the agent must first create a structured plan that documents reasoning, identifies steps, and allocates resources.
+
+## Trigger Conditions
+
+This planning skill MUST be activated when:
+
+1. A file appears in `/Needs_Action` that requires multiple steps
+2. The task involves external systems (email, WhatsApp, APIs)
+3. The task has potential consequences (sending messages, making decisions)
+4. The task is ambiguous or requires clarification
+5. The user explicitly requests a plan
+
+## Planning Process
+
+### Step 1: Analyze the Input
+
+When you encounter a task in `/Needs_Action`:
+
+1. **Read the entire file** including frontmatter and content
+2. **Identify the task type** (email, WhatsApp, file, etc.)
+3. **Extract key information**:
+   - Who is involved (sender, recipient)
+   - What is being requested
+   - When is it needed (urgency, deadlines)
+   - Why is it important (context, keywords)
+4. **Assess complexity**:
+   - Simple: Single action, no dependencies → May execute directly
+   - Complex: Multiple steps, external dependencies → MUST create plan
+
+### Step 2: Create the Plan File
+
+For complex tasks, create a plan file in `/Plans` with the naming convention:
+
+```
+PLAN_[Original_Filename_Without_Extension].md
+```
+
+**Example:**
+- Input: `/Needs_Action/EMAIL_20260216_143000_Meeting_Request.md`
+- Plan: `/Plans/PLAN_EMAIL_20260216_143000_Meeting_Request.md`
+
+### Step 3: Plan Template Structure
+
+Use the following template for all plan files:
+
+```markdown
+---
+type: plan
+status: draft
+created: [TIMESTAMP]
+task_file: [Original filename]
+priority: [low|medium|high|critical]
+---
+
+# Plan: [Brief Description]
+
+## Objective
+
+**Goal:** [What needs to be accomplished?]
+
+**Success Criteria:**
+- [ ] [Measurable outcome 1]
+- [ ] [Measurable outcome 2]
+- [ ] [Measurable outcome 3]
+
+## Context
+
+### Input Summary
+[Summarize the original task/message in 2-3 sentences]
+
+### Key Information
+- **Source:** [Where did this come from?]
+- **Urgency:** [How urgent is this?]
+- **Stakeholders:** [Who is involved?]
+- **Keywords/Flags:** [Important terms that triggered this]
+
+### Constraints
+- [Any limitations or requirements]
+- [Deadlines or time constraints]
+- [Resource limitations]
+
+## Reasoning (ReAct Pattern)
+
+### Thought 1: Initial Assessment
+[What do I understand about this task?]
+[What are the potential approaches?]
+
+### Thought 2: Risk Analysis
+[What could go wrong?]
+[What information is missing?]
+[Should I ask for clarification?]
+
+### Thought 3: Strategy Selection
+[Which approach is best and why?]
+[What are the trade-offs?]
+
+## Execution Steps
+
+### Phase 1: Preparation
+- [ ] Step 1: [Specific action]
+  - **Tool/Resource:** [What's needed]
+  - **Expected Outcome:** [What should happen]
+- [ ] Step 2: [Specific action]
+  - **Tool/Resource:** [What's needed]
+  - **Expected Outcome:** [What should happen]
+
+### Phase 2: Execution
+- [ ] Step 3: [Specific action]
+  - **Tool/Resource:** [What's needed]
+  - **Expected Outcome:** [What should happen]
+- [ ] Step 4: [Specific action]
+  - **Tool/Resource:** [What's needed]
+  - **Expected Outcome:** [What should happen]
+
+### Phase 3: Verification
+- [ ] Step 5: [Verification action]
+  - **Tool/Resource:** [What's needed]
+  - **Expected Outcome:** [What should happen]
+- [ ] Step 6: [Documentation/Archival]
+  - **Tool/Resource:** [What's needed]
+  - **Expected Outcome:** [What should happen]
+
+## Required Resources
+
+### Tools & MCPs
+- [ ] **Gmail API** - For email operations
+- [ ] **WhatsApp Web** - For messaging
+- [ ] **File System** - For file operations
+- [ ] **Browser** - For web interactions
+- [ ] **Claude Code** - For code execution
+- [ ] **Other:** [Specify]
+
+### Information Needed
+- [ ] [Missing information 1]
+- [ ] [Missing information 2]
+
+### Approvals Required
+- [ ] User approval for [specific action]
+- [ ] Confirmation of [specific detail]
+
+## Contingency Plans
+
+### If Step X Fails
+**Fallback:** [Alternative approach]
+**Escalation:** [When to ask user for help]
+
+### If Information is Missing
+**Action:** [How to request clarification]
+**Blocker:** [What can't proceed without this]
+
+## Execution Log
+
+### [Timestamp] - Plan Created
+- Status: Draft
+- Next Action: Review and approve
+
+### [Timestamp] - Plan Approved
+- Status: Approved
+- Next Action: Begin Phase 1
+
+### [Timestamp] - Phase 1 Complete
+- Status: In Progress
+- Next Action: Begin Phase 2
+
+[Continue logging as execution progresses]
+
+## Final Outcome
+
+[To be filled after execution]
+
+**Result:** [Success/Partial/Failed]
+**Completed Steps:** [X/Y]
+**Issues Encountered:** [List any problems]
+**Lessons Learned:** [What to do differently next time]
+
+---
+*Generated by Planning Skill - ReAct Pattern*
+```
+
+## Decision Tree: When to Plan vs. Execute
+
+```
+Task in /Needs_Action
+    ↓
+Is it complex? (Multiple steps, external systems, consequences)
+    ↓
+YES → Create PLAN file → Get approval → Execute with logging
+    ↓
+NO → Is it urgent AND simple?
+    ↓
+YES → Execute directly → Log to Dashboard
+    ↓
+NO → Create PLAN file (better safe than sorry)
+```
+
+## Best Practices
+
+### 1. Always Think Before Acting
+- Never execute without understanding the full context
+- Document your reasoning process
+- Consider multiple approaches
+
+### 2. Be Explicit About Uncertainty
+- If information is missing, say so in the plan
+- Ask for clarification rather than making assumptions
+- Flag risks and potential issues upfront
+
+### 3. Make Plans Actionable
+- Each step should be specific and measurable
+- Include expected outcomes for verification
+- Identify required tools and resources
+
+### 4. Maintain Audit Trail
+- Log every decision and action
+- Update the plan as execution progresses
+- Document deviations from the original plan
+
+### 5. Learn and Improve
+- After execution, reflect on what worked
+- Update the plan with lessons learned
+- Use insights to improve future plans
+
+## Integration with Other Skills
+
+### Audit_Needs_Action Skill
+When auditing `/Needs_Action`, assess each file for complexity and create plans as needed.
+
+### Update_Dashboard Skill
+Log plan creation and execution progress to Dashboard.md:
+```
+| [Timestamp] | Plan_Created | ✓ Complete | Created plan for [task] |
+| [Timestamp] | Plan_Approved | ✓ Complete | Approved plan for [task] |
+| [Timestamp] | Plan_Executing | ⏳ In Progress | Executing Phase 1 of [task] |
+```
+
+### Archive_Task Skill
+When archiving, ensure both the original task file AND the plan file are moved to `/Done`.
+
+## Examples
+
+### Example 1: Simple Task (No Plan Needed)
+
+**Input:** File notification in Inbox
+**Assessment:** Single action (copy file)
+**Decision:** Execute directly, log to Dashboard
+
+### Example 2: Complex Email (Plan Required)
+
+**Input:** Important email requesting invoice
+**Assessment:** Multiple steps (find invoice, draft reply, send)
+**Decision:** Create plan, get approval, execute with logging
+
+### Example 3: Urgent WhatsApp (Plan with Fast Track)
+
+**Input:** Urgent WhatsApp: "HELP: Payment failed"
+**Assessment:** Urgent but needs investigation
+**Decision:** Create lightweight plan, execute quickly, document thoroughly
+
+## Continuous Improvement
+
+This planning skill should evolve based on:
+- Feedback from executed plans
+- New types of tasks encountered
+- Improved reasoning patterns
+- User preferences and requirements
+
+Update this document as the AI Employee learns and grows.
+
+---
+
+**Version:** 1.0
+**Last Updated:** 2026-02-16
+**Pattern:** ReAct (Reasoning + Acting)
+**References:**
+- [ReAct Agent Framework](https://github.com/marcosf63/react-agent-framework)
+- Chain of Thought prompting
+- Plan-Execute reasoning strategies

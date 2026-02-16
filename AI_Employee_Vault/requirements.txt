@@ -9,6 +9,16 @@ google-auth-oauthlib>=1.2.0  # OAuth2 authentication for Gmail
 google-auth-httplib2>=0.2.0  # HTTP library for Google APIs
 google-api-python-client>=2.100.0  # Gmail API client
 
+# Silver Tier: WhatsApp Integration
+playwright>=1.40.0  # Browser automation for WhatsApp Web
+
+# Silver Tier: Email MCP Server
+mcp>=1.0.0  # Model Context Protocol SDK (includes fastmcp)
+
+# Silver Tier: Approval Handler (Safety Valve)
+watchdog>=3.0.0  # File system monitoring for approval workflow
+pyyaml>=6.0  # YAML parsing for frontmatter
+
 # Optional dependencies for future enhancements:
 # watchdog==4.0.0  # For event-driven file monitoring (alternative to polling)
 # requests==2.31.0  # For API watchers
