@@ -30,5 +30,12 @@ Thumbs.db
 *.log
 
 # Vault runtime files
-AI_Employee_Vault/Logs/*.log
-AI_Employee_Vault/Logs/processed_files.json
+AI_Employee_Vault/Logs/
+AI_Employee_Vault/.obsidian/
+AI_Employee_Vault/Done/*.txt
+AI_Employee_Vault/Inbox/*.txt
+
+# Gmail credentials (NEVER commit these!)
+AI_Employee_Vault/credentials/
+**/token.json
+**/credentials.json

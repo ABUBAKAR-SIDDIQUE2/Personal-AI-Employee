@@ -1,5 +1,0 @@
-This is a test task for the Bronze Tier AI Employee system.
-
-Task: Verify that the workflow is functioning correctly.
-
-Expected outcome: File should be detected, processed, and archived properly.

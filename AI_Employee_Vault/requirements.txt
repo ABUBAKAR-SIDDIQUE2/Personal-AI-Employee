@@ -1,8 +1,13 @@
-# Personal AI Employee - Bronze Tier
+# Personal AI Employee - Silver Tier
 # Python Dependencies
 
-# Core dependencies: None required!
+# Bronze Tier: No dependencies required
 # Both base_watcher.py and filesystem_watcher.py use only Python standard library.
+
+# Silver Tier: Gmail Integration
+google-auth-oauthlib>=1.2.0  # OAuth2 authentication for Gmail
+google-auth-httplib2>=0.2.0  # HTTP library for Google APIs
+google-api-python-client>=2.100.0  # Gmail API client
 
 # Optional dependencies for future enhancements:
 # watchdog==4.0.0  # For event-driven file monitoring (alternative to polling)
