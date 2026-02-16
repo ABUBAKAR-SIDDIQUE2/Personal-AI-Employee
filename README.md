@@ -1,4 +1,4 @@
-# Personal AI Employee (Bronze Tier)
+# Personal AI Employee (Silver Tier)
 
 A local-first autonomous agent system that uses Obsidian as a visual dashboard and Python watchers to monitor, process, and archive tasks automatically.
 
@@ -6,16 +6,17 @@ A local-first autonomous agent system that uses Obsidian as a visual dashboard a
 
 The Personal AI Employee is a modular system designed to act as a digital full-time employee (FTE) that:
 
-- **Monitors** various sources (file system, APIs, emails) for new tasks
+- **Monitors** various sources (file system, Gmail, APIs) for new tasks
 - **Processes** incoming items using AI-powered decision making
 - **Archives** completed work with full audit trails
 - **Reports** activity through an Obsidian-based dashboard
 
-This Bronze Tier implementation focuses on:
-- Local file system monitoring
-- Manual AI processing via Claude Code
-- Structured workflow management
-- Complete transparency and auditability
+**Current Implementation (Silver Tier):**
+- ✅ Local file system monitoring
+- ✅ Gmail inbox monitoring (important unread emails)
+- ✅ Manual AI processing via Claude Code
+- ✅ Structured workflow management
+- ✅ Complete transparency and auditability
 
 ## Prerequisites
 
@@ -57,7 +58,7 @@ venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Note: The Bronze Tier uses only Python standard library, so no external packages are strictly required. The requirements.txt file includes optional dependencies for future enhancements.
+**Note:** Silver Tier requires Google API libraries for Gmail integration. All dependencies will be installed from requirements.txt.
 
 ### 5. Open Vault in Obsidian
 
@@ -75,10 +76,13 @@ AI_Employee_Vault/
 ├── Done/               # Archived completed tasks
 ├── Logs/               # System logs and audit trails
 ├── Plans/              # Agent reasoning and decision documentation
+├── credentials/        # Gmail OAuth credentials (create during setup)
 ├── Dashboard.md        # Real-time system status and activity log
 ├── Company_Handbook.md # Rules of engagement and operational guidelines
 ├── base_watcher.py     # Abstract base class for all watchers
 ├── filesystem_watcher.py # File system monitoring implementation
+├── gmail_watcher.py    # Gmail inbox monitoring implementation
+├── setup_gmail.py      # Gmail OAuth setup helper
 └── requirements.txt    # Python dependencies
 ```
 
@@ -155,6 +159,58 @@ Open `Dashboard.md` in Obsidian to see:
 - System health metrics
 - Completion statistics
 
+## Gmail Integration (Silver Tier)
+
+### Setup Gmail Monitoring
+
+The Gmail watcher monitors your inbox for important unread emails and creates action items automatically.
+
+**Step 1: Install Gmail Dependencies**
+
+```bash
+pip install -r requirements.txt
+```
+
+**Step 2: Set Up Gmail OAuth**
+
+Follow the detailed guide in [GMAIL_SETUP.md](GMAIL_SETUP.md) to:
+1. Create a Google Cloud project
+2. Enable Gmail API
+3. Download OAuth credentials
+4. Authenticate with your Gmail account
+
+Quick setup:
+
+```bash
+# Create credentials directory
+mkdir AI_Employee_Vault/credentials
+
+# Place your credentials.json in the credentials folder
+# Then run the setup script
+python setup_gmail.py credentials
+```
+
+**Step 3: Start Gmail Watcher**
+
+```bash
+python gmail_watcher.py credentials
+```
+
+The watcher will:
+1. Check for important unread emails every 5 minutes
+2. Create action files in `/Needs_Action` with email metadata
+3. Log all activity in `/Logs`
+
+**Step 4: Process Emails with Claude Code**
+
+When new emails are detected, process them with your Digital FTE:
+
+```
+Act as my Digital FTE. Check /Needs_Action and process the new email.
+```
+
+### Step 5: Monitor Progress in Obsidian
+
 ## Agent Skills
 
 The Digital FTE has three core skills:
@@ -163,7 +219,9 @@ The Digital FTE has three core skills:
 2. **Update_Dashboard**: Appends timestamped activity logs to `Dashboard.md`
 3. **Archive_Task**: Moves completed files from `/Needs_Action` to `/Done`
 
-## Workflow Example
+## Workflow Examples
+
+### File System Workflow
 
 ```
 1. User drops invoice.pdf into /Inbox
@@ -177,6 +235,24 @@ The Digital FTE has three core skills:
 5. Claude Code processes the invoice
    ↓
 6. Dashboard.md updated with "Processed invoice"
+   ↓
+7. Files archived to /Done/
+```
+
+### Gmail Workflow
+
+```
+1. Important email arrives in Gmail inbox
+   ↓
+2. gmail_watcher.py detects it (within 5 minutes)
+   ↓
+3. Email action file created: EMAIL_20260216_143000_Meeting_Request.md
+   ↓
+4. Metadata includes: sender, subject, body, suggested actions
+   ↓
+5. Claude Code reads and processes the email
+   ↓
+6. Dashboard.md updated with "Processed email from sender@example.com"
    ↓
 7. Files archived to /Done/
 ```
@@ -200,15 +276,17 @@ Extend `BaseWatcher` to monitor other sources:
 ```python
 from base_watcher import BaseWatcher
 
-class EmailWatcher(BaseWatcher):
+class SlackWatcher(BaseWatcher):
     def check_for_updates(self):
-        # Check email inbox
+        # Check Slack for mentions
         pass
 
     def create_action_file(self, item):
-        # Create task from email
+        # Create task from Slack message
         pass
 ```
+
+See `gmail_watcher.py` for a complete implementation example.
 
 ## Troubleshooting
 
@@ -226,24 +304,34 @@ class EmailWatcher(BaseWatcher):
 - Check that `Dashboard.md` exists and is not read-only
 - Verify Claude has write permissions to the vault
 
+**Gmail watcher issues:**
+- See detailed troubleshooting in [GMAIL_SETUP.md](GMAIL_SETUP.md)
+- Ensure credentials are properly configured
+- Check that token.json is valid and not expired
+- Verify Gmail API is enabled in Google Cloud Console
+
 ## Roadmap
 
-**Bronze Tier (Current):**
+**Bronze Tier (Complete):**
 - ✅ File system monitoring
 - ✅ Manual AI processing
 - ✅ Basic workflow management
+- ✅ Structured vault architecture
 
-**Silver Tier (Planned):**
-- Email monitoring
-- API endpoint watchers
-- Automated task routing
-- Multi-agent coordination
+**Silver Tier (Complete):**
+- ✅ Gmail inbox monitoring
+- ✅ OAuth2 authentication
+- ✅ Email action file generation
+- ✅ Multi-source monitoring
 
-**Gold Tier (Future):**
+**Gold Tier (Planned):**
+- Automated action processor (removes manual intervention)
+- Slack/Teams integration
+- Calendar monitoring
 - Natural language task creation
 - Proactive task suggestions
-- Integration with external tools
 - Advanced reasoning and planning
+- Integration with external tools (Jira, Notion, etc.)
 
 ## License
 
@@ -255,4 +343,4 @@ This is a personal project, but suggestions and improvements are welcome via iss
 
 ---
 
-**Built with Claude Code** | Version 1.0 - Bronze Tier
+**Built with Claude Code** | Version 2.0 - Silver Tier
