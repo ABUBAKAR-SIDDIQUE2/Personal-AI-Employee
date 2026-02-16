@@ -39,3 +39,15 @@ AI_Employee_Vault/Inbox/*.txt
 AI_Employee_Vault/credentials/
 **/token.json
 **/credentials.json
+
+# WhatsApp session data (NEVER commit this!)
+AI_Employee_Vault/whatsapp_session/
+**/whatsapp_session/
+
+# Approval workflow (contains sensitive pending actions)
+AI_Employee_Vault/Pending_Approval/
+AI_Employee_Vault/Approved/
+AI_Employee_Vault/Rejected/
+
+# LinkedIn queue (contains unpublished posts)
+AI_Employee_Vault/LINKEDIN_QUEUE.md
