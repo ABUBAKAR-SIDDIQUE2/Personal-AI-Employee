@@ -48,6 +48,11 @@ AI_Employee_Vault/whatsapp_session/
 AI_Employee_Vault/Pending_Approval/
 AI_Employee_Vault/Approved/
 AI_Employee_Vault/Rejected/
+AI_Employee_Vault/Needs_Action/*.md
 
 # LinkedIn queue (contains unpublished posts)
 AI_Employee_Vault/LINKEDIN_QUEUE.md
+
+# whatsapp Debug snapshots
+AI_Employee_Vault/*.png
+

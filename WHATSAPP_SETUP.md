@@ -12,7 +12,7 @@ The WhatsApp watcher monitors your WhatsApp Web for **urgent messages** containi
 
 - Python 3.13+ installed
 - Active WhatsApp account with phone
-- Chrome/Chromium browser (installed automatically by Playwright)
+- Firefox browser (installed automatically by Playwright)
 
 ## Step 1: Install Dependencies
 
@@ -25,11 +25,13 @@ This installs Playwright, the browser automation library.
 
 ## Step 2: Install Browser
 
-Playwright needs to download the Chromium browser:
+Playwright needs to download the Firefox browser:
 
 ```bash
-playwright install chromium
+playwright install firefox
 ```
+
+**IMPORTANT:** Do NOT use `--headless` flag for your very first run. The system will automatically detect if this is your first time and show the browser window so you can scan the QR code.
 
 This downloads ~300MB and only needs to be done once.
 
@@ -59,7 +61,7 @@ python whatsapp_watcher.py whatsapp_session
 ```
 
 This will:
-1. Open a Chrome browser window
+1. Open a Firefox browser window (automatically shown on first run)
 2. Navigate to web.whatsapp.com
 3. Display a QR code
 
@@ -193,7 +195,7 @@ This is useful for troubleshooting or monitoring the watcher's behavior.
 **Solution:** Install Playwright and browsers:
 ```bash
 pip install playwright
-playwright install chromium
+playwright install firefox
 ```
 
 ## Security Notes
@@ -221,7 +223,7 @@ Session data is stored locally in the `whatsapp_session/` directory. This includ
 To revoke access:
 1. Open WhatsApp on your phone
 2. Go to Settings > Linked Devices
-3. Find "Chrome" or "Chromium"
+3. Find "Firefox"
 4. Tap and select "Log Out"
 5. Delete the session directory: `rm -rf whatsapp_session`
 
@@ -316,7 +318,7 @@ For more advanced filtering, edit the `check_for_updates()` method in `whatsapp_
 
 ### Resource Usage
 
-- **Memory:** ~500MB per watcher instance (Chromium browser)
+- **Memory:** ~500MB per watcher instance (Firefox browser)
 - **CPU:** Low (~1-2% when idle, ~10% during checks)
 - **Network:** Minimal (only loads WhatsApp Web once)
 

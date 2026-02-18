@@ -3,9 +3,16 @@ WhatsApp Watcher for AI Employee Sensory System
 
 Monitors WhatsApp Web for urgent messages containing specific keywords
 and creates action items for the AI agent to process.
+
+Uses Firefox for better compatibility with WhatsApp Web.
+Uses Click-and-Read strategy with brute-force text extraction.
+Includes aggressive clicking with multiple fallback strategies.
+Includes rotating debug snapshot storage (keeps last 4 snapshots).
 """
 
+import sys
 import time
+import logging
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any, Optional
@@ -16,7 +23,7 @@ try:
 except ImportError:
     raise ImportError(
         "WhatsApp watcher requires Playwright. "
-        "Install with: pip install playwright && playwright install chromium"
+        "Install with: pip install playwright && playwright install firefox"
     )
 
 from base_watcher import BaseWatcher
@@ -28,10 +35,14 @@ class WhatsAppWatcher(BaseWatcher):
 
     Monitors messages containing keywords: urgent, invoice, payment, help
     Uses persistent browser context to maintain WhatsApp Web session.
+    Uses Firefox for better WhatsApp Web compatibility.
+    Uses Click-and-Read strategy with brute-force text extraction.
+    Includes aggressive clicking with scroll, force click, JS click, and parent click fallbacks.
+    Maintains rotating debug snapshot storage (keeps last 4 snapshots).
     """
 
-    # Keywords to filter urgent messages
-    URGENT_KEYWORDS = ['urgent', 'invoice', 'payment', 'help', 'asap', 'emergency', 'critical']
+    # Keywords to filter urgent messages (includes test keywords)
+    URGENT_KEYWORDS = ['urgent', 'invoice', 'payment', 'help', 'asap', 'emergency', 'critical', 'hello', 'test']
 
     def __init__(
         self,
@@ -47,19 +58,47 @@ class WhatsAppWatcher(BaseWatcher):
             vault_path: Path to the AI Employee vault root directory
             session_path: Path to store browser session data (for persistent login)
             check_interval: Time in seconds between checks (default: 60)
-            headless: Run browser in headless mode (default: True)
+            headless: Run browser in headless mode (default: True, but overridden on first run)
         """
         super().__init__(vault_path, check_interval)
 
+        # Force console logging to stdout with DEBUG level
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(logging.DEBUG)
+        console_formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        console_handler.setFormatter(console_formatter)
+        self.logger.addHandler(console_handler)
+        self.logger.setLevel(logging.DEBUG)
+
         self.session_path = Path(session_path)
-        self.headless = headless
 
         # Create session directory if it doesn't exist
         self.session_path.mkdir(parents=True, exist_ok=True)
 
-        # Track processed message IDs
+        # Create debug snapshots directory
+        self.snapshots_path = self.logs_path / "whatsapp_debug_snapshots"
+        self.snapshots_path.mkdir(parents=True, exist_ok=True)
+
+        # Check if this is first run (session directory is empty or has no Firefox profile)
+        self.is_first_run = self._is_first_run()
+
+        # Force headless=False on first run to allow QR code scanning
+        if self.is_first_run:
+            self.headless = False
+            self.logger.info("First run detected - forcing visible browser for QR code authentication")
+        else:
+            self.headless = headless
+
+        # Track processed message IDs (urgent messages that were acted upon)
         self.processed_ids_file = self.logs_path / "processed_whatsapp.txt"
         self.processed_ids = self._load_processed_ids()
+
+        # Track ignored message IDs (non-urgent messages that were checked and skipped)
+        self.ignored_ids_file = self.logs_path / "ignored_whatsapp.txt"
+        self.ignored_ids = self._load_ignored_ids()
 
         # Playwright instances (initialized on first use)
         self._playwright = None
@@ -68,14 +107,31 @@ class WhatsAppWatcher(BaseWatcher):
         self._page = None
 
         self.logger.info(f"Initialized WhatsAppWatcher with session at {session_path}")
+        self.logger.info(f"Headless mode: {self.headless}")
+        self.logger.info(f"Debug snapshots directory: {self.snapshots_path}")
+        self.logger.info(f"Loaded {len(self.processed_ids)} processed IDs and {len(self.ignored_ids)} ignored IDs")
+        self.logger.info("Using Click-and-Read strategy with brute-force text extraction")
+        self.logger.info("Aggressive clicking enabled: scroll + force + JS + parent fallbacks")
+        self.logger.info("Rotating snapshot storage enabled: keeping last 4 snapshots")
+
+    def _is_first_run(self) -> bool:
+        """Check if this is the first run (no existing session)."""
+        if not self.session_path.exists():
+            return True
+
+        session_files = list(self.session_path.iterdir())
+        if not session_files:
+            return True
+
+        firefox_markers = ['prefs.js', 'cookies.sqlite', 'places.sqlite']
+        has_firefox_profile = any(
+            (self.session_path / marker).exists() for marker in firefox_markers
+        )
+
+        return not has_firefox_profile
 
     def _load_processed_ids(self) -> set:
-        """
-        Load the set of already processed message IDs.
-
-        Returns:
-            Set of processed message ID strings
-        """
+        """Load the set of already processed message IDs."""
         if self.processed_ids_file.exists():
             try:
                 with open(self.processed_ids_file, 'r') as f:
@@ -85,226 +141,474 @@ class WhatsAppWatcher(BaseWatcher):
                 return set()
         return set()
 
-    def _save_processed_id(self, message_id: str) -> None:
-        """
-        Save a processed message ID to the tracking file.
+    def _load_ignored_ids(self) -> set:
+        """Load the set of ignored (non-urgent) message IDs."""
+        if self.ignored_ids_file.exists():
+            try:
+                with open(self.ignored_ids_file, 'r') as f:
+                    return set(line.strip() for line in f if line.strip())
+            except Exception as e:
+                self.logger.warning(f"Could not load ignored IDs: {e}")
+                return set()
+        return set()
 
-        Args:
-            message_id: Message identifier to mark as processed
-        """
+    def _save_processed_id(self, message_id: str) -> None:
+        """Save a processed message ID to the tracking file."""
         try:
             with open(self.processed_ids_file, 'a') as f:
                 f.write(f"{message_id}\n")
             self.processed_ids.add(message_id)
+            self.logger.debug(f"Saved processed ID: {message_id}")
         except Exception as e:
             self.logger.error(f"Could not save processed ID: {e}")
 
+    def _save_ignored_id(self, message_id: str) -> None:
+        """Save an ignored (non-urgent) message ID to the tracking file."""
+        try:
+            with open(self.ignored_ids_file, 'a') as f:
+                f.write(f"{message_id}\n")
+            self.ignored_ids.add(message_id)
+            self.logger.debug(f"Saved ignored ID: {message_id}")
+        except Exception as e:
+            self.logger.error(f"Could not save ignored ID: {e}")
+
     def _init_browser(self) -> None:
-        """Initialize Playwright browser with persistent context."""
+        """Initialize Playwright browser with persistent context using Firefox."""
         if self._playwright is None:
             try:
                 self._playwright = sync_playwright().start()
 
-                # Launch persistent context to maintain WhatsApp Web session
-                self._context = self._playwright.chromium.launch_persistent_context(
+                self._context = self._playwright.firefox.launch_persistent_context(
                     user_data_dir=str(self.session_path),
                     headless=self.headless,
-                    args=[
-                        '--disable-blink-features=AutomationControlled',
-                        '--no-sandbox',
-                        '--disable-dev-shm-usage'
-                    ],
                     viewport={'width': 1280, 'height': 720}
                 )
 
-                # Get the page
                 if len(self._context.pages) > 0:
                     self._page = self._context.pages[0]
                 else:
                     self._page = self._context.new_page()
 
-                self.logger.info("Browser initialized successfully")
+                self.logger.info("Firefox browser initialized successfully")
 
             except Exception as e:
-                self.logger.error(f"Failed to initialize browser: {e}")
+                self.logger.error(f"Failed to initialize Firefox browser: {e}")
                 raise
 
-    def _navigate_to_whatsapp(self) -> bool:
-        """
-        Navigate to WhatsApp Web and wait for it to load.
+    def _wait_for_chat_list(self, timeout: int = 10000) -> bool:
+        """Wait for WhatsApp chat list to appear using multiple fallback selectors."""
+        selectors = [
+            '[data-testid="chat-list"]',
+            '[aria-label="Chat list"]',
+            '[aria-label="New chat"]',
+            'div[role="grid"]'
+        ]
 
-        Returns:
-            True if navigation successful, False otherwise
-        """
+        for selector in selectors:
+            try:
+                self._page.wait_for_selector(selector, timeout=timeout)
+                self.logger.info(f"Chat list detected using selector: {selector}")
+                return True
+            except:
+                continue
+
+        return False
+
+    def _navigate_to_whatsapp(self) -> bool:
+        """Navigate to WhatsApp Web and wait for it to load."""
         try:
             if self._page is None:
                 self._init_browser()
 
-            # Navigate to WhatsApp Web
             self._page.goto('https://web.whatsapp.com', wait_until='networkidle', timeout=30000)
 
-            # Wait for either QR code or chat list to appear
             try:
-                # Check if already logged in (chat list appears)
-                self._page.wait_for_selector('[data-testid="chat-list"]', timeout=10000)
-                self.logger.info("WhatsApp Web loaded - already authenticated")
-                return True
-            except:
-                # QR code appeared - need to scan
-                try:
-                    self._page.wait_for_selector('canvas[aria-label*="Scan"]', timeout=5000)
-                    self.logger.warning("QR code detected - please scan to authenticate")
-                    self.logger.warning("Waiting 60 seconds for QR code scan...")
-
-                    # Wait for authentication (chat list appears after scan)
-                    self._page.wait_for_selector('[data-testid="chat-list"]', timeout=60000)
-                    self.logger.info("Authentication successful!")
+                if self._wait_for_chat_list(timeout=10000):
+                    self.logger.info("WhatsApp Web loaded - already authenticated")
                     return True
-                except:
-                    self.logger.error("Failed to authenticate - QR code not scanned in time")
+            except:
+                pass
+
+            try:
+                self._page.wait_for_selector('canvas[aria-label*="Scan"]', timeout=5000)
+                self.logger.warning("QR code detected - manual authentication required")
+
+                print("\n" + "="*70)
+                print(">>> ACTION REQUIRED: WhatsApp QR Code Authentication")
+                print("="*70)
+                print("1. Scan the QR code displayed in the browser window")
+                print("2. Wait for your chats to fully load in WhatsApp Web")
+                print("3. Once you see your chat list, press ENTER here to continue")
+                print("="*70)
+
+                input(">>> Press ENTER after scanning QR code and chats have loaded: ")
+
+                if self._wait_for_chat_list(timeout=5000):
+                    self.logger.info("Authentication successful - chat list detected!")
+                    time.sleep(2)
+                    return True
+                else:
+                    self.logger.error("Chat list not found after manual confirmation")
                     return False
+
+            except Exception as e:
+                self.logger.error(f"Error during QR code authentication: {e}")
+                return False
 
         except Exception as e:
             self.logger.error(f"Error navigating to WhatsApp Web: {e}")
             return False
 
-    def check_for_updates(self) -> List[Dict[str, Any]]:
+    def _verify_chat_opened(self, timeout_ms: int = 3000) -> bool:
+        """Verify that a chat has actually opened by checking for div#main."""
+        try:
+            self.logger.debug(f"Verifying chat opened (timeout: {timeout_ms}ms)...")
+            main_locator = self._page.locator('div#main >> visible=true')
+            main_locator.wait_for(timeout=timeout_ms)
+            self.logger.debug("✓ Chat verified - div#main is visible")
+            return True
+        except Exception as e:
+            self.logger.debug(f"✗ Chat verification failed: {e}")
+            return False
+
+    def _aggressive_click(self, badge) -> bool:
         """
-        Check WhatsApp Web for new urgent messages.
+        Attempt to click a badge using multiple aggressive strategies.
+
+        Strategies (in order):
+        1. Scroll into view + force click
+        2. JavaScript direct click
+        3. Parent container click
+
+        Args:
+            badge: The badge element to click
 
         Returns:
-            List of message dictionaries with metadata
+            True if any click attempt succeeded, False if all failed
         """
+        # ATTEMPT 1: Scroll into view + Force Click
+        try:
+            self.logger.debug("Attempt 1: Scroll into view + force click...")
+            badge.scroll_into_view_if_needed()
+            time.sleep(0.5)  # Brief pause after scroll
+            badge.click(force=True, timeout=2000)
+            self.logger.debug("✓ Force click succeeded")
+            return True
+        except Exception as e:
+            self.logger.debug(f"✗ Force click failed: {e}")
+
+        # ATTEMPT 2: JavaScript Click (The Nuclear Option)
+        try:
+            self.logger.debug("Attempt 2: JavaScript direct click...")
+            badge.evaluate('element => element.click()')
+            self.logger.debug("✓ JavaScript click succeeded")
+            return True
+        except Exception as e:
+            self.logger.debug(f"✗ JavaScript click failed: {e}")
+
+        # ATTEMPT 3: Parent Container Click
+        try:
+            self.logger.debug("Attempt 3: Parent container click...")
+            parent = badge.evaluate_handle('element => element.closest("[data-testid=\\"cell-frame-container\\"]")')
+            if parent:
+                parent_elem = parent.as_element()
+                if parent_elem:
+                    parent_elem.scroll_into_view_if_needed()
+                    time.sleep(0.5)
+                    parent_elem.click(force=True, timeout=2000)
+                    self.logger.debug("✓ Parent click succeeded")
+                    return True
+        except Exception as e:
+            self.logger.debug(f"✗ Parent click failed: {e}")
+
+        # All attempts failed
+        self.logger.error("All click attempts failed (force, JS, parent)")
+        return False
+
+    def _extract_sender_name_from_header(self) -> str:
+        """Extract the sender/chat name from the conversation header inside div#main."""
+        try:
+            main_elem = self._page.query_selector('div#main')
+            if main_elem:
+                header = main_elem.query_selector('header')
+                if header:
+                    title_elem = header.query_selector('[title]')
+                    if title_elem:
+                        title = title_elem.get_attribute('title')
+                        if title and title.strip():
+                            self.logger.debug(f"Extracted sender from div#main header [title]: {title}")
+                            return title.strip()
+
+                    header_text = header.inner_text()
+                    if header_text and header_text.strip():
+                        first_line = header_text.split('\n')[0].strip()
+                        if first_line:
+                            self.logger.debug(f"Extracted sender from div#main header text: {first_line}")
+                            return first_line
+        except Exception as e:
+            self.logger.debug(f"Strategy 1 (div#main header) failed: {e}")
+
+        selectors = [
+            'header [title]',
+            '[data-testid="conversation-info-header-chat-title"]',
+            'header h2',
+            'header span[title]',
+            'header span[dir="auto"]'
+        ]
+
+        for selector in selectors:
+            try:
+                elem = self._page.query_selector(selector)
+                if elem:
+                    title = elem.get_attribute('title')
+                    if title and title.strip():
+                        self.logger.debug(f"Extracted sender using {selector} (title attribute): {title}")
+                        return title.strip()
+
+                    text = elem.inner_text()
+                    if text and text.strip():
+                        self.logger.debug(f"Extracted sender using {selector} (inner text): {text}")
+                        return text.strip()
+            except Exception as e:
+                self.logger.debug(f"Selector {selector} failed: {e}")
+                continue
+
+        self.logger.warning("Could not extract sender name from header")
+        return "Unknown"
+
+    def _extract_recent_messages(self) -> str:
+        """
+        Extract message text from the chat using brute-force approach.
+        Uses specific div#main >> visible=true selector.
+        """
+        try:
+            self.logger.debug("Attempting brute-force text extraction from div#main...")
+
+            try:
+                main_locator = self._page.locator('div#main >> visible=true')
+                main_locator.wait_for(timeout=5000)
+
+                text_content = main_locator.inner_text()
+
+                if text_content and text_content.strip():
+                    cleaned = ' '.join(text_content.split())
+                    self.logger.debug(f"Successfully extracted {len(cleaned)} characters from div#main")
+                    self.logger.debug(f"Text preview: {cleaned[:200]}...")
+                    return cleaned
+                else:
+                    self.logger.warning("div#main found but text content is empty")
+
+            except Exception as e:
+                self.logger.warning(f"Strategy 1 (div#main >> visible=true) failed: {e}")
+
+            try:
+                self.logger.debug("Trying fallback: div[role='application']...")
+                app_locator = self._page.locator('div[role="application"]')
+                app_locator.wait_for(timeout=3000)
+
+                text_content = app_locator.inner_text()
+
+                if text_content and text_content.strip():
+                    cleaned = ' '.join(text_content.split())
+                    self.logger.debug(f"Successfully extracted {len(cleaned)} characters from application div")
+                    return cleaned
+
+            except Exception as e:
+                self.logger.warning(f"Strategy 2 (application div) failed: {e}")
+
+            self.logger.error("All text extraction strategies failed")
+            self._save_debug_snapshot("extraction_failed")
+
+            return "Error: Could not extract messages"
+
+        except Exception as e:
+            self.logger.error(f"Critical error in _extract_recent_messages: {e}", exc_info=True)
+            self._save_debug_snapshot("extraction_exception")
+            return "Error: Exception during extraction"
+
+    def _cleanup_old_snapshots(self) -> None:
+        """
+        Clean up old debug snapshots, keeping only the 4 most recent files.
+        """
+        try:
+            # Get all PNG files in the snapshots directory
+            snapshot_files = list(self.snapshots_path.glob('*.png'))
+
+            # If we have 4 or fewer files, no cleanup needed
+            if len(snapshot_files) <= 4:
+                return
+
+            # Sort by modification time (oldest first)
+            snapshot_files.sort(key=lambda x: x.stat().st_mtime)
+
+            # Calculate how many to delete (keep last 4)
+            files_to_delete = snapshot_files[:-4]
+
+            # Delete old files
+            deleted_count = 0
+            for file_path in files_to_delete:
+                try:
+                    file_path.unlink()
+                    deleted_count += 1
+                    self.logger.debug(f"Deleted old snapshot: {file_path.name}")
+                except Exception as e:
+                    self.logger.warning(f"Could not delete {file_path.name}: {e}")
+
+            if deleted_count > 0:
+                self.logger.info(f"Deleted {deleted_count} old snapshot(s) to maintain storage limit (keeping last 4)")
+
+        except Exception as e:
+            self.logger.error(f"Error during snapshot cleanup: {e}")
+
+    def _save_debug_snapshot(self, reason: str) -> None:
+        """
+        Save a screenshot for debugging when extraction fails.
+        Automatically cleans up old snapshots to keep only the 4 most recent.
+
+        Args:
+            reason: Reason for the snapshot (used in filename)
+        """
+        try:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            screenshot_path = self.snapshots_path / f"{reason}_{timestamp}.png"
+
+            self._page.screenshot(path=str(screenshot_path))
+
+            self.logger.warning(f"📸 Debug snapshot saved: {screenshot_path}")
+            print(f"\n⚠️  DEBUG SNAPSHOT SAVED")
+            print(f"    Reason: {reason}")
+            print(f"    Location: {screenshot_path}")
+            print(f"    Please inspect this screenshot to see what the bot sees.\n")
+
+            # Clean up old snapshots (keep only last 4)
+            self._cleanup_old_snapshots()
+
+        except Exception as e:
+            self.logger.error(f"Failed to save debug snapshot: {e}")
+
+    def check_for_updates(self) -> List[Dict[str, Any]]:
+        """Check WhatsApp Web for new urgent messages using aggressive click strategy."""
         urgent_messages = []
 
         try:
-            # Ensure browser is initialized and navigated
+            self.logger.info("=" * 60)
+            self.logger.info("Starting check for updates...")
+
             if not self._navigate_to_whatsapp():
                 self.logger.error("Cannot check for updates - WhatsApp Web not loaded")
                 return []
 
-            # Wait for chat list to be ready
-            self._page.wait_for_selector('[data-testid="chat-list"]', timeout=10000)
-
-            # Find all chats with unread messages
-            # WhatsApp uses spans with aria-label for unread counts
-            unread_chats = self._page.query_selector_all('[aria-label*="unread message"]')
-
-            if not unread_chats:
-                self.logger.debug("No unread messages found")
+            if not self._wait_for_chat_list(timeout=10000):
+                self.logger.error("Chat list not found - cannot check for updates")
                 return []
 
-            self.logger.info(f"Found {len(unread_chats)} chat(s) with unread messages")
+            self.logger.info("Searching for unread message badges...")
+            unread_badges = self._page.query_selector_all('[aria-label*="unread message"]')
 
-            # Process each unread chat
-            for chat_element in unread_chats[:10]:  # Limit to 10 chats to prevent overwhelming
+            if not unread_badges:
+                self.logger.info("No unread messages found")
+                return []
+
+            self.logger.info(f"Found {len(unread_badges)} unread badge(s)")
+
+            for idx, badge in enumerate(unread_badges[:10], 1):
                 try:
-                    # Get the parent chat item
-                    chat_item = chat_element.evaluate_handle(
-                        'element => element.closest("[data-testid=\\"cell-frame-container\\"]")'
-                    ).as_element()
+                    self.logger.info(f"Processing badge {idx}/{min(len(unread_badges), 10)}...")
 
-                    if not chat_item:
+                    # AGGRESSIVE CLICK STRATEGY
+                    self.logger.debug("Attempting aggressive click...")
+                    click_success = self._aggressive_click(badge)
+
+                    if not click_success:
+                        self.logger.error("All click attempts failed - skipping this badge")
+                        self._save_debug_snapshot("click_failed")
                         continue
 
-                    # Extract chat name
-                    chat_name_elem = chat_item.query_selector('[data-testid="cell-frame-title"]')
-                    chat_name = chat_name_elem.inner_text() if chat_name_elem else "Unknown"
+                    # VERIFY: Check if chat actually opened
+                    if not self._verify_chat_opened(timeout_ms=3000):
+                        self.logger.warning("Chat did not open after click - retrying...")
 
-                    # Extract message preview
-                    message_preview_elem = chat_item.query_selector('[data-testid="last-msg-text"]')
-                    message_preview = message_preview_elem.inner_text() if message_preview_elem else ""
+                        # RETRY: Try aggressive click again
+                        click_success = self._aggressive_click(badge)
 
-                    # Check if message contains urgent keywords
-                    message_lower = message_preview.lower()
-                    matching_keywords = [kw for kw in self.URGENT_KEYWORDS if kw in message_lower]
+                        if not click_success or not self._verify_chat_opened(timeout_ms=3000):
+                            self.logger.error("Chat did not open after retry - skipping this badge")
+                            self._save_debug_snapshot("phantom_click")
+                            continue
+                        else:
+                            self.logger.info("✓ Chat opened successfully after retry")
+                    else:
+                        self.logger.debug("✓ Chat opened successfully on first attempt")
 
-                    if not matching_keywords:
-                        self.logger.debug(f"Skipping message from {chat_name} - no urgent keywords")
-                        continue
+                    # Wait for content to stabilize
+                    time.sleep(1)
 
-                    # Create unique message ID
-                    message_id = f"{chat_name}_{message_preview[:50]}_{datetime.now().strftime('%Y%m%d%H%M')}"
-                    message_id = re.sub(r'[^a-zA-Z0-9_]', '_', message_id)
+                    # EXTRACT DATA
+                    sender = self._extract_sender_name_from_header()
+                    self.logger.info(f"Chat opened: {sender}")
 
-                    # Skip if already processed
-                    if message_id in self.processed_ids:
-                        self.logger.debug(f"Skipping already processed message: {message_id}")
-                        continue
-
-                    # Click on chat to get full message
-                    chat_item.click()
-                    time.sleep(2)  # Wait for messages to load
-
-                    # Get the last few messages from this chat
+                    self.logger.debug("Extracting messages using brute-force method...")
                     messages = self._extract_recent_messages()
 
-                    # Create message data
+                    if not messages or messages.startswith("Error:"):
+                        self.logger.warning(f"Could not extract messages from {sender} - skipping")
+                        continue
+
+                    self.logger.debug(f"Extracted {len(messages)} characters of text")
+                    self.logger.debug(f"Text preview: {messages[:150]}...")
+
+                    # Create unique message ID
+                    message_id = f"{sender}_{messages[:50]}_{datetime.now().strftime('%Y%m%d%H%M')}"
+                    message_id = re.sub(r'[^a-zA-Z0-9_]', '_', message_id)
+
+                    # Check if already processed or ignored
+                    if message_id in self.processed_ids:
+                        self.logger.info(f"Message from {sender} already processed - skipping")
+                        continue
+
+                    if message_id in self.ignored_ids:
+                        self.logger.info(f"Message from {sender} already ignored - skipping")
+                        continue
+
+                    # KEYWORD CHECK
+                    messages_lower = messages.lower()
+                    matching_keywords = [kw for kw in self.URGENT_KEYWORDS if kw in messages_lower]
+
+                    if not matching_keywords:
+                        self.logger.info(f"Message from {sender} checked - NOT URGENT (no keywords matched)")
+                        self.logger.debug(f"  Message content: {messages[:100]}")
+                        self._save_ignored_id(message_id)
+                        continue
+
+                    # Message is URGENT!
+                    self.logger.info(f"🚨 URGENT MESSAGE from {sender} - Keywords: {matching_keywords}")
+
                     message_data = {
                         'id': message_id,
-                        'sender': chat_name,
-                        'preview': message_preview,
+                        'sender': sender,
+                        'preview': messages[:200],
                         'full_messages': messages,
                         'keywords': matching_keywords,
                         'timestamp': datetime.now()
                     }
 
                     urgent_messages.append(message_data)
-                    self.logger.info(f"Found urgent message from {chat_name} with keywords: {matching_keywords}")
+                    self.logger.info(f"Added urgent message from {sender} to processing queue")
 
                 except Exception as e:
-                    self.logger.error(f"Error processing chat: {e}")
+                    self.logger.error(f"Error processing badge {idx}: {e}", exc_info=True)
                     continue
+
+            self.logger.info(f"Check complete. Found {len(urgent_messages)} urgent message(s)")
+            self.logger.info("=" * 60)
 
         except Exception as e:
             self.logger.error(f"Error checking for updates: {e}", exc_info=True)
 
         return urgent_messages
 
-    def _extract_recent_messages(self) -> str:
-        """
-        Extract recent messages from the currently open chat.
-
-        Returns:
-            String containing recent messages
-        """
-        try:
-            # Wait for messages to load
-            self._page.wait_for_selector('[data-testid="msg-container"]', timeout=5000)
-
-            # Get all message containers
-            message_containers = self._page.query_selector_all('[data-testid="msg-container"]')
-
-            # Get last 5 messages
-            recent_messages = []
-            for container in message_containers[-5:]:
-                try:
-                    # Get message text
-                    text_elem = container.query_selector('.copyable-text span')
-                    if text_elem:
-                        message_text = text_elem.inner_text()
-
-                        # Check if incoming or outgoing
-                        is_incoming = container.query_selector('[data-testid="msg-in"]') is not None
-                        prefix = "Them: " if is_incoming else "You: "
-
-                        recent_messages.append(f"{prefix}{message_text}")
-                except:
-                    continue
-
-            return "\n".join(recent_messages) if recent_messages else "Could not extract messages"
-
-        except Exception as e:
-            self.logger.error(f"Error extracting messages: {e}")
-            return "Error extracting messages"
-
     def create_action_file(self, item: Dict[str, Any]) -> None:
-        """
-        Create a Markdown action file for an urgent WhatsApp message.
-
-        Args:
-            item: Message data dictionary from check_for_updates()
-        """
+        """Create a Markdown action file for an urgent WhatsApp message."""
         try:
             message_id = item['id']
             sender = item['sender']
@@ -313,13 +617,11 @@ class WhatsAppWatcher(BaseWatcher):
             keywords = item['keywords']
             timestamp = item['timestamp']
 
-            # Generate filename
             safe_sender = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in sender)
-            safe_sender = safe_sender[:30]  # Limit length
+            safe_sender = safe_sender[:30]
             filename = f"WHATSAPP_{timestamp.strftime('%Y%m%d_%H%M%S')}_{safe_sender}.md"
             filepath = self.needs_action_path / filename
 
-            # Create markdown content
             content = self._generate_whatsapp_markdown(
                 sender=sender,
                 preview=preview,
@@ -329,16 +631,13 @@ class WhatsAppWatcher(BaseWatcher):
                 message_id=message_id
             )
 
-            # Write file
             with open(filepath, 'w', encoding='utf-8') as f:
                 f.write(content)
 
-            self.logger.info(f"Created WhatsApp action file: {filename}")
+            self.logger.info(f"✅ Created WhatsApp action file: {filename}")
 
-            # Mark as processed
             self._save_processed_id(message_id)
 
-            # Log the action
             self.log_action(
                 action="Urgent WhatsApp message detected",
                 details=f"From: {sender} | Keywords: {', '.join(keywords)}"
@@ -357,20 +656,7 @@ class WhatsAppWatcher(BaseWatcher):
         timestamp: datetime,
         message_id: str
     ) -> str:
-        """
-        Generate markdown content for WhatsApp action file.
-
-        Args:
-            sender: Message sender name
-            preview: Message preview text
-            full_messages: Full message conversation
-            keywords: Matched urgent keywords
-            timestamp: Message timestamp
-            message_id: Unique message identifier
-
-        Returns:
-            Formatted markdown string
-        """
+        """Generate markdown content for WhatsApp action file."""
         content = f"""---
 type: whatsapp
 sender: {sender}
@@ -394,7 +680,7 @@ message_id: {message_id}
 
 {preview}
 
-## Recent Conversation
+## Full Content
 
 ```
 {full_messages}
@@ -411,9 +697,10 @@ message_id: {message_id}
 ## Notes
 
 This message was automatically detected as urgent based on keyword matching.
+Content extracted using brute-force method from WhatsApp Web main panel.
 
 ---
-*Generated by WhatsAppWatcher*
+*Generated by WhatsAppWatcher (Firefox) - Aggressive Click + Brute-Force Extraction*
 """
         return content
 
@@ -429,17 +716,14 @@ This message was automatically detected as urgent based on keyword matching.
 
 
 def main():
-    """
-    Main entry point for running the WhatsApp watcher.
-    """
+    """Main entry point for running the WhatsApp watcher."""
     import sys
 
-    # Get paths from command line
     if len(sys.argv) < 2:
         print("Usage: python whatsapp_watcher.py <session_path> [vault_path] [--headless]")
         print("  session_path: Directory to store browser session data")
         print("  vault_path: Path to AI_Employee_Vault (default: current directory)")
-        print("  --headless: Run browser in headless mode (default: visible)")
+        print("  --headless: Run browser in headless mode (default: visible on first run)")
         sys.exit(1)
 
     session_path = sys.argv[1]
@@ -451,30 +735,36 @@ def main():
 
     headless = '--headless' in sys.argv
 
-    # Create and run the watcher
     try:
         watcher = WhatsAppWatcher(
             vault_path=str(vault_path),
             session_path=session_path,
-            check_interval=60,  # Check every minute
+            check_interval=60,
             headless=headless
         )
-        print(f"Starting WhatsApp watcher...")
+        print("\n" + "="*70)
+        print("WhatsApp Watcher - Aggressive Click + Brute-Force Extraction")
+        print("="*70)
         print(f"Session path: {session_path}")
-        print(f"Monitoring: Urgent messages with keywords: {', '.join(WhatsAppWatcher.URGENT_KEYWORDS)}")
+        print(f"Keywords: {', '.join(WhatsAppWatcher.URGENT_KEYWORDS)}")
         print(f"Check interval: 60 seconds")
-        print(f"Headless mode: {headless}")
-        print(f"Press Ctrl+C to stop")
+        print(f"Headless mode: {watcher.headless}")
+        print(f"Console logging: ENABLED (DEBUG level)")
+        print(f"Extraction method: Brute-force (div#main >> visible=true)")
+        print(f"Click strategy: Aggressive (scroll + force + JS + parent)")
+        print(f"Snapshot storage: Rotating (keeps last 4)")
+        print("="*70)
+        print("Press Ctrl+C to stop\n")
 
-        if not headless:
-            print("\nNote: Browser window will open. If you see a QR code, scan it with your phone.")
-            print("The session will be saved and you won't need to scan again.")
+        if not watcher.headless:
+            print("Note: Browser window will open. If you see a QR code, scan it with your phone.")
+            print("The session will be saved and you won't need to scan again.\n")
 
         watcher.run()
     except KeyboardInterrupt:
-        print("\nWatcher stopped by user")
+        print("\n\nWatcher stopped by user")
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"\nError: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)
