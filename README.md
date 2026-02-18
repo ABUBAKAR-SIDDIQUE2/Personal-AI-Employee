@@ -68,8 +68,10 @@ pip install -r requirements.txt
 
 After installing dependencies, run:
 ```bash
-playwright install chromium
+playwright install firefox
 ```
+
+**IMPORTANT:** For WhatsApp setup, do NOT use `--headless` flag on your very first run. The system automatically detects first-time setup and shows the browser window for QR code scanning.
 
 ### 5. Open Vault in Obsidian
 
@@ -252,7 +254,7 @@ The WhatsApp watcher monitors WhatsApp Web for urgent messages containing specif
 
 ```bash
 pip install -r requirements.txt
-playwright install chromium
+playwright install firefox
 ```
 
 **Step 2: Create Session Directory**
@@ -438,7 +440,7 @@ See `/Agent_Skills/social_media.md` for guidelines.
 ```bash
 cd AI_Employee_Vault
 pip install -r requirements.txt
-playwright install chromium
+playwright install firefox
 ```
 
 ### Step 2: Set Up Gmail
@@ -637,10 +639,11 @@ See `gmail_watcher.py` for a complete implementation example.
 
 **WhatsApp watcher issues:**
 - See detailed troubleshooting in [WHATSAPP_SETUP.md](WHATSAPP_SETUP.md)
-- Ensure Playwright and Chromium are installed: `playwright install chromium`
+- Ensure Playwright and Firefox are installed: `playwright install firefox`
 - If QR code appears again, session may have expired - rescan to authenticate
 - Check that WhatsApp Web is not logged out on your phone
 - Verify browser has enough memory (~500MB required)
+- For first-time setup, do NOT use `--headless` flag (system auto-detects and shows browser)
 
 ## Roadmap
 
