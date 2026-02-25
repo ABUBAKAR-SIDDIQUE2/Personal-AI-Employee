@@ -73,7 +73,17 @@ playwright install firefox
 
 **IMPORTANT:** For WhatsApp setup, do NOT use `--headless` flag on your very first run. The system automatically detects first-time setup and shows the browser window for QR code scanning.
 
-### 5. Open Vault in Obsidian
+### 5. Initialize Vault Structure
+
+Before starting the orchestrator, run the setup script to create all required directories:
+
+```bash
+python setup_vault.py
+```
+
+This creates all necessary folders (Inbox, Needs_Action, Pending_Approval, Approved, Rejected, Done, Plans, Logs, etc.).
+
+### 6. Open Vault in Obsidian
 
 1. Launch Obsidian
 2. Click "Open folder as vault"

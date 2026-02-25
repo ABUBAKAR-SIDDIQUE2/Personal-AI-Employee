@@ -32,8 +32,9 @@ Thumbs.db
 # Vault runtime files
 AI_Employee_Vault/Logs/
 AI_Employee_Vault/.obsidian/
-AI_Employee_Vault/Done/*.txt
+AI_Employee_Vault/Done/
 AI_Employee_Vault/Inbox/*.txt
+AI_Employee_Vault/Processed/*
 
 # Gmail credentials (NEVER commit these!)
 AI_Employee_Vault/credentials/
@@ -55,4 +56,5 @@ AI_Employee_Vault/LINKEDIN_QUEUE.md
 
 # whatsapp Debug snapshots
 AI_Employee_Vault/*.png
+
 

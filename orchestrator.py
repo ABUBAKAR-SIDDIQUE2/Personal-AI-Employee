@@ -4,8 +4,11 @@ Master Orchestrator for AI Employee
 
 Manages all watcher processes and the approval handler in a single unified system.
 Provides automatic restart, health monitoring, and graceful shutdown.
+
+Enhanced with comprehensive error capture and debugging capabilities.
 """
 
+import os
 import sys
 import time
 import signal
@@ -43,7 +46,7 @@ class Orchestrator:
     Master orchestrator for AI Employee system.
 
     Manages all watcher processes and approval handler with automatic restart,
-    health monitoring, and graceful shutdown capabilities.
+    health monitoring, graceful shutdown, and comprehensive error capture.
     """
 
     def __init__(self, vault_path: str):
@@ -64,6 +67,25 @@ class Orchestrator:
 
         # Set up logging
         self._setup_logging()
+
+        # Ensure all required vault directories exist
+        self._ensure_vault_structure()
+
+        # Open consolidated debug log for subprocess output
+        self.debug_log_path = self.logs_path / "process_debug.log"
+        try:
+            self.debug_log_file = open(self.debug_log_path, 'a', buffering=1)
+            self.logger.info(f"Opened consolidated debug log: {self.debug_log_path}")
+
+            # Write separator for new orchestrator session
+            separator = f"\n{'='*80}\n"
+            separator += f"ORCHESTRATOR SESSION STARTED: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            separator += f"{'='*80}\n\n"
+            self.debug_log_file.write(separator)
+            self.debug_log_file.flush()
+        except Exception as e:
+            self.logger.error(f"Failed to open debug log: {e}")
+            self.debug_log_file = None
 
         # Define managed processes
         self.processes: Dict[str, ProcessConfig] = {
@@ -128,6 +150,37 @@ class Orchestrator:
             self.logger.addHandler(console_handler)
             self.logger.addHandler(file_handler)
 
+    def _ensure_vault_structure(self) -> None:
+        """
+        Ensure all required vault directories exist.
+
+        Creates missing directories automatically to prevent crashes.
+        This makes the system self-healing and zero-configuration.
+        """
+        required_dirs = [
+            "Inbox",
+            "Needs_Action",
+            "Pending_Approval",
+            "Approved",
+            "Rejected",
+            "Done",
+            "Plans",
+            "Logs",
+            "Logs/whatsapp_debug_snapshots",
+            "Agent_Skills",
+            "credentials",
+            "whatsapp_session",
+        ]
+
+        for dir_name in required_dirs:
+            dir_path = self.vault_path / dir_name
+            if not dir_path.exists():
+                try:
+                    dir_path.mkdir(parents=True, exist_ok=True)
+                    self.logger.info(f"Created missing directory: {dir_name}")
+                except Exception as e:
+                    self.logger.error(f"Failed to create directory {dir_name}: {e}")
+
     def _signal_handler(self, signum, frame):
         """
         Handle shutdown signals.
@@ -182,7 +235,7 @@ class Orchestrator:
 
     def _start_process(self, config: ProcessConfig) -> bool:
         """
-        Start a managed process.
+        Start a managed process with enhanced error capture.
 
         Args:
             config: Process configuration
@@ -197,18 +250,65 @@ class Orchestrator:
                 self.logger.error(f"Script not found: {script_path}")
                 return False
 
-            # Start process
+            # Create modified environment with PYTHONPATH
+            env = os.environ.copy()
+
+            # Add vault_path to PYTHONPATH so subprocesses can import local modules
+            pythonpath = env.get('PYTHONPATH', '')
+            if pythonpath:
+                env['PYTHONPATH'] = f"{self.vault_path}:{pythonpath}"
+            else:
+                env['PYTHONPATH'] = str(self.vault_path)
+
+            self.logger.debug(f"PYTHONPATH for {config.name}: {env['PYTHONPATH']}")
+
+            # Write process start marker to debug log
+            if self.debug_log_file:
+                marker = f"\n{'='*80}\n"
+                marker += f"STARTING: {config.description} ({config.script})\n"
+                marker += f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                marker += f"Command: {sys.executable} {script_path} {' '.join(config.args)}\n"
+                marker += f"{'='*80}\n\n"
+                self.debug_log_file.write(marker)
+                self.debug_log_file.flush()
+
+            # Start process with stdout/stderr redirected to debug log
             config.process = subprocess.Popen(
                 [sys.executable, str(script_path)] + config.args,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                cwd=str(self.vault_path)
+                stdout=self.debug_log_file if self.debug_log_file else subprocess.PIPE,
+                stderr=self.debug_log_file if self.debug_log_file else subprocess.PIPE,
+                cwd=str(self.vault_path),
+                env=env
             )
 
             config.restart_count += 1
             config.last_restart = datetime.now()
 
             self.logger.info(f"Started {config.description} (PID: {config.process.pid})")
+
+            # STARTUP VERIFICATION: Wait 2 seconds and check if process immediately crashed
+            time.sleep(2)
+            return_code = config.process.poll()
+
+            if return_code is not None:
+                # Process has already exited!
+                self.logger.error(f"⚠️  IMMEDIATE CRASH DETECTED: {config.description}")
+                self.logger.error(f"   Process exited with return code: {return_code}")
+                self.logger.error(f"   Check {self.debug_log_path} for error details")
+
+                print(f"\n{'='*80}")
+                print(f"⚠️  IMMEDIATE CRASH DETECTED")
+                print(f"{'='*80}")
+                print(f"Process: {config.description}")
+                print(f"Script: {config.script}")
+                print(f"Exit Code: {return_code}")
+                print(f"Debug Log: {self.debug_log_path}")
+                print(f"{'='*80}\n")
+
+                config.process = None
+                return False
+
+            self.logger.info(f"✓ {config.description} startup verified (running after 2s)")
             return True
 
         except Exception as e:
@@ -227,6 +327,15 @@ class Orchestrator:
 
         try:
             self.logger.info(f"Stopping {config.description}...")
+
+            # Write process stop marker to debug log
+            if self.debug_log_file:
+                marker = f"\n{'='*80}\n"
+                marker += f"STOPPING: {config.description}\n"
+                marker += f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                marker += f"{'='*80}\n\n"
+                self.debug_log_file.write(marker)
+                self.debug_log_file.flush()
 
             # Try graceful termination first
             config.process.terminate()
@@ -264,17 +373,31 @@ class Orchestrator:
 
     def _restart_process(self, config: ProcessConfig) -> None:
         """
-        Restart a failed process.
+        Restart a failed process with crash reporting.
 
         Args:
             config: Process configuration
         """
-        self.logger.warning(f"{config.description} has died, restarting...")
+        # CRASH REPORTING
+        self.logger.error(f"🚨 [CRASH DETECTED] {config.description} has died!")
+        self.logger.error(f"   Check {self.debug_log_path} for error traceback and details")
+
+        print(f"\n{'='*80}")
+        print(f"🚨 [CRASH DETECTED]")
+        print(f"{'='*80}")
+        print(f"Process: {config.description}")
+        print(f"Script: {config.script}")
+        print(f"Restart Count: {config.restart_count}")
+        print(f"")
+        print(f"⚠️  ACTION REQUIRED:")
+        print(f"   Check the debug log for error details:")
+        print(f"   tail -100 {self.debug_log_path}")
+        print(f"{'='*80}\n")
 
         # Stop if somehow still running
         self._stop_process(config)
 
-        # Wait a bit before restart (exponential backoff)
+        # Wait before restart (exponential backoff)
         wait_time = min(2 ** min(config.restart_count, 5), 60)  # Max 60 seconds
         self.logger.info(f"Waiting {wait_time}s before restart...")
         time.sleep(wait_time)
@@ -291,6 +414,7 @@ class Orchestrator:
         self.logger.info("AI Employee Master Orchestrator")
         self.logger.info("=" * 60)
         self.logger.info(f"Vault path: {self.vault_path}")
+        self.logger.info(f"Debug log: {self.debug_log_path}")
         self.logger.info("")
 
         # Start all processes
@@ -322,6 +446,19 @@ class Orchestrator:
             self._stop_process(config)
 
         self.logger.info("All processes stopped")
+
+        # Close debug log file
+        if self.debug_log_file:
+            try:
+                separator = f"\n{'='*80}\n"
+                separator += f"ORCHESTRATOR SESSION ENDED: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+                separator += f"{'='*80}\n\n"
+                self.debug_log_file.write(separator)
+                self.debug_log_file.flush()
+                self.debug_log_file.close()
+                self.logger.info("Closed debug log file")
+            except Exception as e:
+                self.logger.error(f"Error closing debug log: {e}")
 
         # Update dashboard
         self._update_dashboard("System Offline: Orchestrator Stopped")

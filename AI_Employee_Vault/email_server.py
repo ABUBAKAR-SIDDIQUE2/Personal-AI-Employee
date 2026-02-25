@@ -33,8 +33,11 @@ except ImportError:
 # Initialize FastMCP server
 mcp = FastMCP("email-server")
 
-# Gmail API scopes
-SCOPES = ['https://www.googleapis.com/auth/gmail.send']
+# Gmail API scopes - include both read and send for full functionality
+SCOPES = [
+    'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/gmail.send'
+]
 
 # Global Gmail service (initialized on first use)
 _gmail_service = None
