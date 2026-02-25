@@ -23,8 +23,11 @@ except ImportError:
     sys.exit(1)
 
 
-# Gmail API scopes
-SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
+# Gmail API scopes - include both read and send for full functionality
+SCOPES = [
+    'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/gmail.send'
+]
 
 
 def setup_gmail_auth(credentials_dir: str) -> bool:

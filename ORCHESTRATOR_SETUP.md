@@ -24,6 +24,7 @@ The orchestrator manages these components:
 
 Before running the orchestrator, ensure:
 
+- ✅ Vault structure initialized (`python setup_vault.py`)
 - ✅ All watchers are configured and tested individually
 - ✅ Gmail credentials set up (`credentials/token.json`)
 - ✅ WhatsApp session authenticated (`whatsapp_session/`)
@@ -91,24 +92,67 @@ All processes stopped
 
 ## Features
 
-### Automatic Restart
+### Automatic Restart with Crash Detection
 
 If a process crashes (e.g., due to network timeout), the orchestrator will:
 
-1. Detect the failure within 30 seconds
-2. Log the event to `Logs/system.log`
-3. Wait before restart (exponential backoff)
-4. Restart the process automatically
-5. Continue monitoring
+1. Detect the failure within 30 seconds (or immediately on startup)
+2. Display a **[CRASH DETECTED]** alert with instructions
+3. Log the event to `Logs/system.log`
+4. Capture full error traceback in `Logs/process_debug.log`
+5. Wait before restart (exponential backoff)
+6. Restart the process automatically
+7. Continue monitoring
 
-Example log entry:
+**Example crash alert:**
 
 ```
-2026-02-16 18:30:15 - Orchestrator - WARNING - Gmail Inbox Watcher has died, restarting...
+================================================================================
+🚨 [CRASH DETECTED]
+================================================================================
+Process: Gmail Inbox Watcher
+Script: gmail_watcher.py
+Restart Count: 2
+
+⚠️  ACTION REQUIRED:
+   Check the debug log for error details:
+   tail -100 AI_Employee_Vault/Logs/process_debug.log
+================================================================================
+```
+
+**Example log entry:**
+
+```
+2026-02-16 18:30:15 - Orchestrator - ERROR - 🚨 [CRASH DETECTED] Gmail Inbox Watcher has died!
+2026-02-16 18:30:15 - Orchestrator - ERROR -    Check AI_Employee_Vault/Logs/process_debug.log for error traceback and details
 2026-02-16 18:30:15 - Orchestrator - INFO - Waiting 2s before restart...
 2026-02-16 18:30:17 - Orchestrator - INFO - Started Gmail Inbox Watcher (PID: 12350)
+2026-02-16 18:30:17 - Orchestrator - INFO - ✓ Gmail Inbox Watcher startup verified (running after 2s)
 2026-02-16 18:30:17 - Orchestrator - INFO - Gmail Inbox Watcher restarted successfully (restart #2)
 ```
+
+### Immediate Crash Detection
+
+The orchestrator now verifies that processes start successfully:
+
+1. After launching a process, waits 2 seconds
+2. Checks if the process is still running
+3. If it crashed immediately, displays detailed error information
+
+**Example immediate crash alert:**
+
+```
+================================================================================
+⚠️  IMMEDIATE CRASH DETECTED
+================================================================================
+Process: WhatsApp Web Watcher
+Script: whatsapp_watcher.py
+Exit Code: 1
+Debug Log: AI_Employee_Vault/Logs/process_debug.log
+================================================================================
+```
+
+This helps identify configuration issues, missing dependencies, or import errors immediately.
 
 ### Dashboard Integration
 
@@ -151,6 +195,38 @@ All orchestrator events are logged to `Logs/system.log`:
 
 ```bash
 tail -f AI_Employee_Vault/Logs/system.log
+```
+
+### Consolidated Debug Log (NEW)
+
+**All subprocess output** (stdout and stderr) from every watcher is captured in a single consolidated log:
+
+```bash
+tail -f AI_Employee_Vault/Logs/process_debug.log
+```
+
+This log contains:
+- All print statements from watchers
+- Python tracebacks and error messages
+- Crash details and stack traces
+- Process start/stop markers with timestamps
+
+**When to check this log:**
+- When a process crashes or restarts repeatedly
+- When you see `[CRASH DETECTED]` alerts
+- When debugging subprocess issues
+- When processes fail to start
+
+**Example usage:**
+```bash
+# View last 100 lines
+tail -100 AI_Employee_Vault/Logs/process_debug.log
+
+# Follow in real-time
+tail -f AI_Employee_Vault/Logs/process_debug.log
+
+# Search for errors
+grep -i "error\|traceback\|exception" AI_Employee_Vault/Logs/process_debug.log
 ```
 
 ### Individual Process Logs
@@ -276,7 +352,14 @@ docker run -d --name ai-employee \
 
 ### Process keeps restarting
 
-**Check logs:**
+**Step 1: Check the consolidated debug log for error details:**
+```bash
+tail -100 AI_Employee_Vault/Logs/process_debug.log
+```
+
+This will show you the actual Python traceback and error message.
+
+**Step 2: Check system log for restart patterns:**
 ```bash
 tail -f AI_Employee_Vault/Logs/system.log
 ```
@@ -286,6 +369,24 @@ tail -f AI_Employee_Vault/Logs/system.log
 - Network connectivity issues
 - Permission problems
 - Missing dependencies
+- Import errors (ModuleNotFoundError)
+- Configuration issues
+
+**Example debug log output:**
+```
+================================================================================
+STARTING: Gmail Inbox Watcher (gmail_watcher.py)
+Time: 2026-02-16 18:30:15
+Command: /usr/bin/python3 /path/to/gmail_watcher.py /path/to/credentials /path/to/vault
+================================================================================
+
+Traceback (most recent call last):
+  File "/path/to/gmail_watcher.py", line 10, in <module>
+    from base_watcher import BaseWatcher
+ModuleNotFoundError: No module named 'base_watcher'
+```
+
+This clearly shows the root cause (missing module import).
 
 ### WhatsApp QR code needed
 
